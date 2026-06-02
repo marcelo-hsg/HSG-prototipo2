@@ -261,7 +261,11 @@ def generar_datos():
         df_citas["urgencia"] = df_citas["urgencia"].replace({"Media":"Media","Media":"Media"})
     return df_pac, df_citas, pd.DataFrame(espera)
 
-if "citas" not in st.session_state:
+if "citas" not in st.session_state or "es_ges" not in st.session_state.get("citas", pd.DataFrame()).columns:
+    # Clear old session state to force regeneration with GES data
+    for key in ["citas", "espera", "agenda"]:
+        if key in st.session_state:
+            del st.session_state[key]
     _, df_c, df_e = generar_datos()
     df_c['urgencia'] = df_c['urgencia'].replace({'Media': 'Media', 'Media': 'Media'})
     st.session_state.citas = df_c.copy()

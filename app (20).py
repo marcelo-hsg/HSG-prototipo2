@@ -509,7 +509,7 @@ elif modulo == "confirmacion":
                 <div class="cita-info"><b>Edad:</b> {row['edad']} años</div>
                 <div class="cita-info"><b>Contacto:</b> <span style="color:{contacto_color};font-weight:600;">{contacto_txt}</span></div>
                 <div class="cita-info"><b>ID:</b> {row['id_cita']}</div>
-                {f'<div class="cita-info"><b style="color:#1a73e8;">GES:</b> <span style="color:#1a73e8;font-weight:600;">{row["patologia_ges"]}</span> — Oportunidad: <span style="color:{("#7b0000" if row["fecha_oportunidad_ges"] < datetime.today().strftime("%Y-%m-%d") else "#ea4335" if (datetime.strptime(row["fecha_oportunidad_ges"],"%Y-%m-%d")-datetime.today()).days <= 15 else "#137333");font-weight:700;">{fecha_es(datetime.strptime(row["fecha_oportunidad_ges"],"%Y-%m-%d"))}</span></div>' if row.get("es_ges") else ""}
+
             </div>
         </div>
         """, unsafe_allow_html=True)

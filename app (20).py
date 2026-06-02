@@ -23,7 +23,7 @@ st.markdown("""
         [data-testid="stHeader"] { background-color: #f5f7fa !important; }
         .stSelectbox label, .stTextInput label, .stRadio label { color: #1a3a6b !important; }
         .stDataFrame { background-color: white !important; }
-        p, span, div, label, h1, h2, h3 { color: #1a3a6b !important; }
+        p, span, div, label, h1, h2, h3 { color: #1a3a6b; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -833,14 +833,14 @@ elif modulo == "agenda_semana":
     dias_nombres = ["Lunes","Martes","Miercoles","Jueves","Viernes"]
 
     st.markdown(f"""
-    <div style="background:#1a3a6b;border-radius:10px;padding:16px 24px;color:white;margin-bottom:20px;display:flex;justify-content:space-between;align-items:center;">
+    <div style="background:#1a3a6b;border-radius:10px;padding:16px 24px;margin-bottom:20px;display:flex;justify-content:space-between;align-items:center;">
         <div>
-            <div style="font-size:13px;opacity:0.75;text-transform:uppercase;letter-spacing:1px;">Semana a confirmar</div>
-            <div style="font-size:20px;font-weight:700;">{lunes_prox.strftime('%d de %B')} al {viernes_prox.strftime('%d de %B de %Y')}</div>
+            <b style="color:#ffffff;font-size:13px;opacity:0.75;text-transform:uppercase;letter-spacing:1px;">Semana a confirmar</b><br>
+            <b style="color:#ffffff;font-size:20px;font-weight:700;">{lunes_prox.strftime('%d de %B')} al {viernes_prox.strftime('%d de %B de %Y')}</b>
         </div>
         <div style="text-align:right;">
-            <div style="font-size:13px;opacity:0.75;">Llamadas sugeridas el viernes</div>
-            <div style="font-size:18px;font-weight:700;">{hoy_ag.strftime('%d/%m/%Y')}</div>
+            <b style="color:#ffffff;font-size:13px;">Llamadas sugeridas el viernes</b><br>
+            <b style="color:#ffffff;font-size:18px;">{hoy_ag.strftime('%d/%m/%Y')}</b>
         </div>
     </div>
     """, unsafe_allow_html=True)
@@ -1014,8 +1014,8 @@ elif modulo == "calendario":
                 st.markdown(f"""
                 <div style="background:#1a3a6b;border-radius:8px 8px 0 0;padding:8px 14px;
                             display:flex;justify-content:space-between;align-items:center;margin-bottom:0;">
-                    <span style="color:#ffffff;font-weight:700;font-size:14px;opacity:1;">{MESES[mes_num]}</span>
-                    <span style="color:#ffffff;font-size:12px;opacity:0.9;">{total_mes} citas</span>
+                    <b style="color:#ffffff;font-size:14px;">{MESES[mes_num]}</b>
+                    <b style="color:#ffffff;font-size:12px;">{total_mes} citas</b>
                 </div>
                 """, unsafe_allow_html=True)
 

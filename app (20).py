@@ -140,6 +140,20 @@ DIAS_SEMANA = ["Lunes", "Martes", "Miercoles", "Jueves", "Viernes"]
 HORARIOS = ["08:30", "09:00", "09:30", "10:00", "10:30", "11:00",
             "11:30", "14:00", "14:30", "15:00", "15:30", "16:00"]
 
+MESES_ES = {
+    1:"enero", 2:"febrero", 3:"marzo", 4:"abril",
+    5:"mayo", 6:"junio", 7:"julio", 8:"agosto",
+    9:"septiembre", 10:"octubre", 11:"noviembre", 12:"diciembre"
+}
+DIAS_ES = {
+    0:"lunes", 1:"martes", 2:"miercoles", 3:"jueves",
+    4:"viernes", 5:"sabado", 6:"domingo"
+}
+
+def fecha_es(fecha_dt):
+    """Convierte datetime a fecha en español."""
+    return f"{fecha_dt.day} de {MESES_ES[fecha_dt.month]} de {fecha_dt.year}"
+
 def sync_agenda():
     """Reconstruye la agenda completa desde el estado actual de las citas."""
     if "agenda" not in st.session_state:
@@ -487,11 +501,11 @@ elif modulo == "confirmacion":
             <div style="display:flex;gap:36px;flex-wrap:wrap;">
                 <div class="cita-info"><b>Especialidad:</b> {row['especialidad']}</div>
                 <div class="cita-info"><b>Medico:</b> {row.get('medico','—')}</div>
-                <div class="cita-info"><b>Fecha:</b> {datetime.strptime(row['fecha'], '%Y-%m-%d').strftime('%d de %B de %Y')} — {row['hora']} hrs</div>
+                <div class="cita-info"><b>Fecha:</b> {fecha_es(datetime.strptime(row['fecha'], '%Y-%m-%d'))} — {row['hora']} hrs</div>
                 <div class="cita-info"><b>RUT:</b> {row['rut']}</div>
                 <div class="cita-info"><b>Telefono:</b> {row['telefono']}</div>
                 <div class="cita-info"><b>Comuna:</b> {row['comuna']}</div>
-                <div class="cita-info"><b>Edad:</b> {row['edad']} anos</div>
+                <div class="cita-info"><b>Edad:</b> {row['edad']} años</div>
                 <div class="cita-info"><b>Contacto:</b> <span style="color:{contacto_color};font-weight:600;">{contacto_txt}</span></div>
                 <div class="cita-info"><b>ID:</b> {row['id_cita']}</div>
             </div>
@@ -546,7 +560,7 @@ elif modulo == "confirmacion":
                 for i, fecha in enumerate(fechas_semana_cita):
                     horas_libres = [h for h,p in agenda_med.get(fecha,{}).items() if p is None]
                     if horas_libres:
-                        label = f"{dias_labels[i]} {datetime.strptime(fecha,'%Y-%m-%d').strftime('%d/%m')}"
+                        label = f"{dias_labels[i]} {datetime.strptime(fecha, '%Y-%m-%d').strftime('%d/%m')}"
                         dias_libres.append((label, fecha))
 
                 if dias_libres:
@@ -726,7 +740,7 @@ elif modulo == "espera":
         horas_libres = [h for h,p in st.session_state.agenda[med_sel][fecha].items() if p is None]
         if horas_libres:
             dt = datetime.strptime(fecha, "%Y-%m-%d")
-            label = dt.strftime("%A %d de %B de %Y").capitalize()
+            label = f"{DIAS_ES[dt.weekday()].capitalize()} {dt.day} de {MESES_ES[dt.month]} de {dt.year}"
             dias_opciones.append((label, fecha))
 
     if dias_opciones:
@@ -836,7 +850,7 @@ elif modulo == "agenda_semana":
     <div style="background:#1a3a6b;border-radius:10px;padding:16px 24px;margin-bottom:20px;display:flex;justify-content:space-between;align-items:center;">
         <div>
             <b style="color:#ffffff;font-size:13px;opacity:0.75;text-transform:uppercase;letter-spacing:1px;">Semana a confirmar</b><br>
-            <b style="color:#ffffff;font-size:20px;font-weight:700;">{lunes_prox.strftime('%d de %B')} al {viernes_prox.strftime('%d de %B de %Y')}</b>
+            <b style="color:#ffffff;font-size:20px;font-weight:700;">{f"{lunes_prox.day} de {MESES_ES[lunes_prox.month]}"} al {f"{viernes_prox.day} de {MESES_ES[viernes_prox.month]} de {viernes_prox.year}"}</b>
         </div>
         <div style="text-align:right;">
             <b style="color:#ffffff;font-size:13px;">Llamadas sugeridas el viernes</b><br>
@@ -909,7 +923,7 @@ elif modulo == "agenda_semana":
                         <div class="cita-info"><b>Especialidad:</b> {row['especialidad']}</div>
                         <div class="cita-info"><b>Medico:</b> {row.get('medico','—')}</div>
                         <div class="cita-info"><b>Comuna:</b> {row['comuna']}</div>
-                        <div class="cita-info"><b>Edad:</b> {row['edad']} anos</div>
+                        <div class="cita-info"><b>Edad:</b> {row['edad']} años</div>
                         <div class="cita-info"><b>Telefono:</b> 
                             <span style="color:{contacto_color};font-weight:700;">{telefono}</span>
                             &nbsp;<span style="font-size:11px;color:{contacto_color};">({contacto_txt})</span>

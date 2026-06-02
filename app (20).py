@@ -59,12 +59,12 @@ st.markdown("""
     .hsg-header-right b { color:#1a3a6b; font-size:13px; }
 
     .hero-section { background: linear-gradient(135deg, #1a3a6b 0%, #1565c0 60%, #1a73e8 100%); padding: 60px 48px 50px; color: white; }
-    .hero-title { font-size:38px; font-weight:800; margin-bottom:10px; letter-spacing:-0.5px; }
-    .hero-sub { font-size:16px; opacity:0.85; max-width:600px; line-height:1.6; margin-bottom:32px; }
+    .hero-title { font-size:38px; font-weight:800; margin-bottom:10px; letter-spacing:-0.5px; color:white !important; }
+    .hero-sub { font-size:16px; opacity:0.85; max-width:600px; line-height:1.6; margin-bottom:32px; color:white !important; }
     .hero-stats { display:flex; gap:32px; flex-wrap:wrap; }
     .hero-stat { text-align:center; }
-    .hero-stat-num { font-size:36px; font-weight:800; line-height:1; }
-    .hero-stat-label { font-size:12px; opacity:0.75; text-transform:uppercase; letter-spacing:1px; margin-top:4px; }
+    .hero-stat-num { font-size:36px; font-weight:800; line-height:1; color:white !important; }
+    .hero-stat-label { font-size:12px; opacity:0.75; text-transform:uppercase; letter-spacing:1px; margin-top:4px; color:white !important; }
     .hero-divider { width:1px; background:rgba(255,255,255,0.25); height:50px; align-self:center; }
 
     .info-section { padding:40px 48px; background:#f5f7fa; }
@@ -373,7 +373,7 @@ if modulo == "inicio":
         </div>
         <div style="background:#1a3a6b;border-radius:12px;padding:24px 28px;color:white;display:flex;justify-content:space-between;align-items:center;">
             <div>
-                <div style="font-size:15px;font-weight:700;margin-bottom:4px;">Horario de Atencion</div>
+                <div style="font-size:15px;font-weight:700;margin-bottom:4px;color:white !important;">Horario de Atencion</div>
                 <div style="font-size:13px;opacity:0.8;">Consultas de especialidad: Lunes a Viernes, 08:00 - 17:00 hrs &nbsp;|&nbsp; Urgencias: 24 horas &nbsp;|&nbsp; Cirugias electivas: Lunes a Viernes, 07:30 - 16:00 hrs</div>
             </div>
             <div style="text-align:right;font-size:13px;opacity:0.8;">
@@ -1009,8 +1009,8 @@ elif modulo == "calendario":
                 st.markdown(f"""
                 <div style="background:#1a3a6b;border-radius:8px 8px 0 0;padding:8px 14px;
                             display:flex;justify-content:space-between;align-items:center;margin-bottom:0;">
-                    <span style="color:white;font-weight:700;font-size:14px;">{MESES[mes_num]}</span>
-                    <span style="color:rgba(255,255,255,0.75);font-size:12px;">{total_mes} citas</span>
+                    <span style="color:white !important;font-weight:700;font-size:14px;">{MESES[mes_num]}</span>
+                    <span style="color:rgba(255,255,255,0.9) !important;font-size:12px;">{total_mes} citas</span>
                 </div>
                 """, unsafe_allow_html=True)
 

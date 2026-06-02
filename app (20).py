@@ -7,11 +7,25 @@ import plotly.express as px
 import plotly.graph_objects as go
 
 st.set_page_config(
-    page_title="Hospital San Gabriel — Sistema de Confirmación",
+    page_title="Hospital San Gabriel — Sistema de Confirmacion",
     page_icon="🏥",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
+
+# Forzar tema claro
+st.markdown("""
+    <style>
+        html, body, [data-testid="stAppViewContainer"], [data-testid="stApp"] {
+            background-color: #f5f7fa !important;
+            color: #1a3a6b !important;
+        }
+        [data-testid="stHeader"] { background-color: #f5f7fa !important; }
+        .stSelectbox label, .stTextInput label, .stRadio label { color: #1a3a6b !important; }
+        .stDataFrame { background-color: white !important; }
+        p, span, div, label, h1, h2, h3 { color: #1a3a6b !important; }
+    </style>
+""", unsafe_allow_html=True)
 
 st.markdown("""
 <style>
@@ -517,7 +531,7 @@ elif modulo == "confirmacion":
                         return "background-color:#fce8e6;color:#c5221f;font-weight:600;"
                     return "background-color:#e6f4ea;color:#137333;font-weight:600;"
 
-                st.dataframe(df_ag.style.applymap(color_ag), use_container_width=True, height=380)
+                st.dataframe(df_ag.style.map(color_ag), use_container_width=True, height=380)
 
                 # Reasignar hora
                 st.markdown("**Reasignar hora para este paciente**")
@@ -669,7 +683,7 @@ elif modulo == "espera":
             return "background-color:#e6f4ea;color:#137333;font-weight:600;"
 
         st.dataframe(
-            df_agenda.style.applymap(color_celda),
+            df_agenda.style.map(color_celda),
             use_container_width=True, height=430
         )
 
@@ -970,8 +984,11 @@ elif modulo == "calendario":
     if estado_cal != "Todos":
         citas_cal = citas_cal[citas_cal["estado"]==estado_cal]
 
-    MESES = ["Enero","Febrero","Marzo","Abril","Mayo","Junio",
-             "Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"]
+    MESES = {
+        1:"Enero", 2:"Febrero", 3:"Marzo", 4:"Abril",
+        5:"Mayo", 6:"Junio", 7:"Julio", 8:"Agosto",
+        9:"Septiembre", 10:"Octubre", 11:"Noviembre", 12:"Diciembre"
+    }
     COLOR_ESTADO = {"Confirmada":"#34a853","Pendiente":"#f9ab00","Cancelada":"#ea4335","Ausente":"#9aa0a6"}
     hoy = datetime.today()
 
@@ -992,7 +1009,7 @@ elif modulo == "calendario":
                 st.markdown(f"""
                 <div style="background:#1a3a6b;border-radius:8px 8px 0 0;padding:8px 14px;
                             display:flex;justify-content:space-between;align-items:center;margin-bottom:0;">
-                    <span style="color:white;font-weight:700;font-size:14px;">{MESES[mes_num-1]}</span>
+                    <span style="color:white;font-weight:700;font-size:14px;">{MESES[mes_num]}</span>
                     <span style="color:rgba(255,255,255,0.75);font-size:12px;">{total_mes} citas</span>
                 </div>
                 """, unsafe_allow_html=True)
@@ -1044,7 +1061,7 @@ elif modulo == "calendario":
                     return "color:#333;"
 
                 st.dataframe(
-                    df_mes.style.applymap(estilo_celda),
+                    df_mes.style.map(estilo_celda),
                     use_container_width=True,
                     hide_index=True,
                     height=int(len(matriz)*35 + 38)
@@ -1069,7 +1086,7 @@ elif modulo == "calendario":
     for mes_num in range(1,13):
         citas_m = citas_cal[citas_cal["mes"]==mes_num]
         resumen_anual.append({
-            "Mes": MESES[mes_num-1][:3],
+            "Mes": MESES[mes_num][:3],
             "Confirmadas": len(citas_m[citas_m["estado"]=="Confirmada"]),
             "Pendientes":  len(citas_m[citas_m["estado"]=="Pendiente"]),
             "Canceladas":  len(citas_m[citas_m["estado"]=="Cancelada"]),

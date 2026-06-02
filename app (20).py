@@ -58,7 +58,7 @@ st.markdown("""
     .hsg-header-right { text-align:right; font-size:12px; color:#666; }
     .hsg-header-right b { color:#1a3a6b; font-size:13px; }
 
-    .hero-section { background: linear-gradient(135deg, #1a3a6b 0%, #1565c0 60%, #1a73e8 100%); padding: 60px 48px 50px; color: white; }
+    .hero-section { background: linear-gradient(135deg, #1a3a6b 0%, #1565c0 60%, #1a73e8 100%); padding: 60px 48px 50px; color: white !important; }
     .hero-title { font-size:38px; font-weight:800; margin-bottom:10px; letter-spacing:-0.5px; color:white !important; }
     .hero-sub { font-size:16px; opacity:0.85; max-width:600px; line-height:1.6; margin-bottom:32px; color:white !important; }
     .hero-stats { display:flex; gap:32px; flex-wrap:wrap; }
@@ -112,6 +112,11 @@ st.markdown("""
     .slot-ocupado { background:#fce8e6; color:#c5221f; padding:4px 10px; border-radius:6px; font-size:12px; font-weight:600; text-decoration:line-through; }
 
     hr { border-color:#e8eaed; margin:16px 0; }
+    .hero-section * { color: white !important; }
+    .hero-section .hero-title { color: white !important; }
+    .hero-section .hero-sub { color: white !important; }
+    .hero-section .hero-stat-num { color: white !important; }
+    .hero-section .hero-stat-label { color: white !important; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -1009,8 +1014,8 @@ elif modulo == "calendario":
                 st.markdown(f"""
                 <div style="background:#1a3a6b;border-radius:8px 8px 0 0;padding:8px 14px;
                             display:flex;justify-content:space-between;align-items:center;margin-bottom:0;">
-                    <span style="color:white !important;font-weight:700;font-size:14px;">{MESES[mes_num]}</span>
-                    <span style="color:rgba(255,255,255,0.9) !important;font-size:12px;">{total_mes} citas</span>
+                    <span style="color:#ffffff;font-weight:700;font-size:14px;opacity:1;">{MESES[mes_num]}</span>
+                    <span style="color:#ffffff;font-size:12px;opacity:0.9;">{total_mes} citas</span>
                 </div>
                 """, unsafe_allow_html=True)
 

@@ -334,6 +334,7 @@ modulos_nav = [
     ("espera","Lista de Espera"),("reportes","Reportes de Ausentismo"),
     ("agenda_semana","Agenda Proxima Semana"),
     ("calendario","Calendario Anual"),
+    ("ges","Pacientes GES"),
 ]
 cols_nav = st.columns(len(modulos_nav))
 for i,(key,label) in enumerate(modulos_nav):
@@ -508,6 +509,7 @@ elif modulo == "confirmacion":
                 <div class="cita-info"><b>Edad:</b> {row['edad']} años</div>
                 <div class="cita-info"><b>Contacto:</b> <span style="color:{contacto_color};font-weight:600;">{contacto_txt}</span></div>
                 <div class="cita-info"><b>ID:</b> {row['id_cita']}</div>
+                {f'<div class="cita-info"><b style="color:#1a73e8;">GES:</b> <span style="color:#1a73e8;font-weight:600;">{row["patologia_ges"]}</span> — Oportunidad: <span style="color:{("#7b0000" if row["fecha_oportunidad_ges"] < datetime.today().strftime("%Y-%m-%d") else "#ea4335" if (datetime.strptime(row["fecha_oportunidad_ges"],"%Y-%m-%d")-datetime.today()).days <= 15 else "#137333");font-weight:700;">{fecha_es(datetime.strptime(row["fecha_oportunidad_ges"],"%Y-%m-%d"))}</span></div>' if row.get("es_ges") else ""}
             </div>
         </div>
         """, unsafe_allow_html=True)
@@ -1124,3 +1126,133 @@ elif modulo == "calendario":
         legend=dict(orientation="h",y=-0.25)
     )
     st.plotly_chart(fig_anual, use_container_width=True)
+
+# ─────────────────────────────────────────────
+# MODULO GES
+# ─────────────────────────────────────────────
+elif modulo == "ges":
+    st.markdown("<div style='padding:24px 8px;'>", unsafe_allow_html=True)
+    st.markdown("<div class='hsg-section-title'>Pacientes GES</div>", unsafe_allow_html=True)
+    st.markdown("<div class='hsg-section-sub'>Garantias Explicitas en Salud — seguimiento de oportunidades y plazos garantizados</div>", unsafe_allow_html=True)
+
+    # Filtrar pacientes GES
+    citas_ges = df_citas[df_citas["es_ges"]==True].copy() if "es_ges" in df_citas.columns else pd.DataFrame()
+
+    if len(citas_ges) == 0:
+        st.info("No hay pacientes GES registrados.")
+    else:
+        hoy_str = datetime.today().strftime("%Y-%m-%d")
+        citas_ges["estado_oportunidad"] = citas_ges["fecha_oportunidad_ges"].apply(
+            lambda f: "Vencida" if f < hoy_str else
+                      "Urgente" if (datetime.strptime(f,"%Y-%m-%d")-datetime.today()).days <= 15 else "Vigente"
+        )
+
+        # Metricas
+        total_ges   = len(citas_ges)
+        vencidas    = len(citas_ges[citas_ges["estado_oportunidad"]=="Vencida"])
+        urgentes    = len(citas_ges[citas_ges["estado_oportunidad"]=="Urgente"])
+        vigentes    = len(citas_ges[citas_ges["estado_oportunidad"]=="Vigente"])
+
+        c1,c2,c3,c4 = st.columns(4)
+        c1.metric("Total pacientes GES", total_ges)
+        c2.metric("Oportunidad vencida", vencidas, delta_color="inverse", delta=f"-{vencidas}" if vencidas>0 else "0")
+        c3.metric("Proximos a vencer (15 dias)", urgentes, delta_color="inverse", delta=f"-{urgentes}" if urgentes>0 else "0")
+        c4.metric("Vigentes", vigentes)
+
+        st.divider()
+
+        # Filtros
+        col_f1, col_f2, col_f3 = st.columns(3)
+        filtro_ges_estado = col_f1.selectbox("Estado oportunidad", ["Todos","Vencida","Urgente","Vigente"], key="ges_estado")
+        filtro_ges_pat    = col_f2.selectbox("Patologia", ["Todas"]+sorted(citas_ges["patologia_ges"].unique().tolist()), key="ges_pat")
+        filtro_ges_esp    = col_f3.selectbox("Especialidad", ["Todas"]+sorted(citas_ges["especialidad"].unique().tolist()), key="ges_esp")
+
+        ges_filtradas = citas_ges.copy()
+        if filtro_ges_estado != "Todos":
+            ges_filtradas = ges_filtradas[ges_filtradas["estado_oportunidad"]==filtro_ges_estado]
+        if filtro_ges_pat != "Todas":
+            ges_filtradas = ges_filtradas[ges_filtradas["patologia_ges"]==filtro_ges_pat]
+        if filtro_ges_esp != "Todas":
+            ges_filtradas = ges_filtradas[ges_filtradas["especialidad"]==filtro_ges_esp]
+
+        # Ordenar: vencidas primero, luego urgentes, luego vigentes
+        orden_map = {"Vencida":0,"Urgente":1,"Vigente":2}
+        ges_filtradas["orden"] = ges_filtradas["estado_oportunidad"].map(orden_map)
+        ges_filtradas = ges_filtradas.sort_values("orden")
+
+        st.caption(f"{len(ges_filtradas)} paciente(s) GES encontrados")
+
+        for _, row in ges_filtradas.iterrows():
+            est_op = row["estado_oportunidad"]
+            clase_card = est_op.lower()
+            
+            if est_op == "Vencida":
+                badge_html = "<span class='badge-ges-vencida'>OPORTUNIDAD VENCIDA</span>"
+                dias_txt = f"Vencio hace {abs((datetime.strptime(row['fecha_oportunidad_ges'],'%Y-%m-%d')-datetime.today()).days)} dias"
+                color_dias = "#7b0000"
+            elif est_op == "Urgente":
+                dias_rest = (datetime.strptime(row['fecha_oportunidad_ges'],'%Y-%m-%d')-datetime.today()).days
+                badge_html = f"<span class='badge-ges-urgente'>URGENTE — {dias_rest} dias restantes</span>"
+                dias_txt = f"Vence en {dias_rest} dias"
+                color_dias = "#ea4335"
+            else:
+                dias_rest = (datetime.strptime(row['fecha_oportunidad_ges'],'%Y-%m-%d')-datetime.today()).days
+                badge_html = f"<span class='badge-ges-ok'>VIGENTE — {dias_rest} dias restantes</span>"
+                dias_txt = f"Vence en {dias_rest} dias"
+                color_dias = "#137333"
+
+            estado_cita = row["estado"]
+            clase_estado = estado_cita.lower()
+
+            st.markdown(f"""
+            <div class="ges-card {clase_card}">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+                    <div style="font-size:15px;font-weight:700;color:#1a3a6b;">{row['nombre_paciente']}</div>
+                    <div style="display:flex;gap:8px;align-items:center;">
+                        {badge_html}
+                        <span class="badge-{clase_estado}">{estado_cita}</span>
+                    </div>
+                </div>
+                <div style="display:flex;gap:32px;flex-wrap:wrap;">
+                    <div class="cita-info"><b>Patologia GES:</b> <span style="color:#1a73e8;font-weight:600;">{row['patologia_ges']}</span></div>
+                    <div class="cita-info"><b>Especialidad:</b> {row['especialidad']}</div>
+                    <div class="cita-info"><b>Medico:</b> {row.get('medico','—')}</div>
+                    <div class="cita-info"><b>Fecha cita:</b> {fecha_es(datetime.strptime(row['fecha'],"%Y-%m-%d"))} — {row['hora']} hrs</div>
+                    <div class="cita-info"><b>Telefono:</b> {row['telefono']}</div>
+                    <div class="cita-info"><b>Diagnostico GES:</b> {fecha_es(datetime.strptime(row['fecha_diagnostico_ges'],"%Y-%m-%d"))}</div>
+                    <div class="cita-info"><b>Oportunidad:</b> <span style="color:{color_dias};font-weight:700;">{fecha_es(datetime.strptime(row['fecha_oportunidad_ges'],"%Y-%m-%d"))} — {dias_txt}</span></div>
+                    <div class="cita-info"><b>RUT:</b> {row['rut']}</div>
+                    <div class="cita-info"><b>ID:</b> {row['id_cita']}</div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+            ba, bb, bc, _ = st.columns([1,1,1,2])
+            if ba.button("Confirmar asistencia", key=f"ges_conf_{row['id_cita']}"):
+                st.session_state.citas.loc[st.session_state.citas["id_cita"]==row["id_cita"],"estado"]="Confirmada"
+                sync_agenda()
+                st.success(f"Cita GES de {row['nombre_paciente']} confirmada.")
+                st.rerun()
+            if bb.button("Cancelar cupo", key=f"ges_canc_{row['id_cita']}"):
+                st.session_state.citas.loc[st.session_state.citas["id_cita"]==row["id_cita"],"estado"]="Cancelada"
+                sync_agenda()
+                st.warning(f"Cupo GES liberado.")
+                st.rerun()
+            if bc.button("Registrar ausencia", key=f"ges_aus_{row['id_cita']}"):
+                st.session_state.citas.loc[st.session_state.citas["id_cita"]==row["id_cita"],"estado"]="Ausente"
+                st.error(f"Ausencia GES registrada.")
+                st.rerun()
+            st.markdown("<hr>", unsafe_allow_html=True)
+
+        # Grafico por patologia
+        st.divider()
+        st.markdown("**Distribucion de pacientes GES por patologia**")
+        ges_pat = citas_ges.groupby(["patologia_ges","estado_oportunidad"]).size().reset_index(name="cantidad")
+        fig_ges = px.bar(ges_pat, x="cantidad", y="patologia_ges", color="estado_oportunidad",
+                         orientation="h", barmode="stack",
+                         color_discrete_map={"Vencida":"#7b0000","Urgente":"#ea4335","Vigente":"#1a73e8"})
+        fig_ges.update_layout(margin=dict(l=0,r=0,t=10,b=0), height=350,
+                              plot_bgcolor="white", paper_bgcolor="white",
+                              legend=dict(orientation="h",y=-0.2),
+                              xaxis_title="Cantidad", yaxis_title="")
+        st.plotly_chart(fig_ges, use_container_width=True)

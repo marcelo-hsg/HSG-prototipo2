@@ -187,7 +187,6 @@ def get_semana_actual():
     lunes = hoy - timedelta(days=hoy.weekday())
     return [(lunes + timedelta(days=i)).strftime("%Y-%m-%d") for i in range(5)]
 
-@st.cache_data
 def generar_datos():
     random.seed(42)
     np.random.seed(42)

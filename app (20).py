@@ -160,7 +160,7 @@ def sync_agenda():
         return
     # Limpiar y reconstruir
     hoy_s = datetime.today().replace(hour=0,minute=0,second=0,microsecond=0)
-    todas_fechas = [(hoy_s + timedelta(days=i)).strftime("%Y-%m-%d") for i in range(60)]
+    todas_fechas = [(hoy_s + timedelta(days=i)).strftime("%Y-%m-%d") for i in range(90)]
     # Reiniciar todas las fechas futuras a None
     for medico in st.session_state.agenda:
         for fecha in todas_fechas:
@@ -225,6 +225,31 @@ def generar_datos():
         urgencia = random.choices(["Alta","Media","Baja"],weights=[20,45,35])[0]
         esp = random.choice(especialidades)
         medico = random.choice(MEDICOS[esp])
+        PATOLOGIAS_GES = [
+            ("Cancer de mama", 30),
+            ("Diabetes Mellitus tipo 2", 180),
+            ("Hipertension arterial", 180),
+            ("Depresion", 90),
+            ("Artrosis de cadera o rodilla", 180),
+            ("Cancer colorrectal", 30),
+            ("Cataratas", 90),
+            ("Epilepsia", 180),
+            ("Insuficiencia renal cronica", 180),
+            ("VIH/SIDA", 15),
+        ]
+        es_ges = random.random() < 0.20
+        if es_ges:
+            pat_ges, plazo_ges = random.choice(PATOLOGIAS_GES)
+            fecha_diag = hoy - timedelta(days=random.randint(1, plazo_ges+30))
+            fecha_op   = fecha_diag + timedelta(days=plazo_ges)
+            pat_ges_val = pat_ges
+            fecha_diag_val = fecha_diag.strftime("%Y-%m-%d")
+            fecha_op_val   = fecha_op.strftime("%Y-%m-%d")
+        else:
+            pat_ges_val    = ""
+            fecha_diag_val = ""
+            fecha_op_val   = ""
+
         citas.append({
             "id_cita": f"C{j:04d}",
             "nombre_paciente": pac["nombre"],
@@ -234,12 +259,16 @@ def generar_datos():
             "comuna": pac["comuna"],
             "especialidad": esp,
             "medico": medico,
-            "fecha": (hoy+timedelta(days=random.randint(0,29))).strftime("%Y-%m-%d"),
+            "fecha": (hoy+timedelta(days=random.randint(0,89))).strftime("%Y-%m-%d"),
             "hora": random.choice(HORARIOS),
             "estado": estado,
             "urgencia": urgencia if urgencia in ["Alta","Media","Baja"] else "Media",
             "causa_ausencia": random.choice(causas_ausencia) if estado=="Ausente" else "",
-            "contacto_valido": pac["contacto_valido"]
+            "contacto_valido": pac["contacto_valido"],
+            "es_ges": es_ges,
+            "patologia_ges": pat_ges_val,
+            "fecha_diagnostico_ges": fecha_diag_val,
+            "fecha_oportunidad_ges": fecha_op_val,
         })
     df_citas = pd.DataFrame(citas)
     espera = []
@@ -271,6 +300,19 @@ if "citas" not in st.session_state or "es_ges" not in st.session_state.get("cita
     st.session_state.citas["urgencia"] = st.session_state.citas["urgencia"].apply(
         lambda x: x if x in ["Alta","Media","Baja"] else "Media"
     )
+    # Calcular score de riesgo de inasistencia
+    COMUNAS_LEJANAS = ["Tirua","Lebu","Canete","Arauco","Curanilahue","Lota","Los Angeles","Chillan"]
+    def calcular_riesgo(row):
+        score = 0
+        if row.get("comuna","") in COMUNAS_LEJANAS: score += 3
+        if not row.get("contacto_valido", True): score += 3
+        if row.get("urgencia","") == "Baja": score += 2
+        if row.get("estado","") == "Pendiente": score += 1
+        if row.get("edad", 0) >= 65: score += 1
+        if score >= 6: return "Alto"
+        elif score >= 3: return "Medio"
+        else: return "Bajo"
+    st.session_state.citas["riesgo_inasistencia"] = st.session_state.citas.apply(calcular_riesgo, axis=1)
     st.session_state.citas["urgencia"] = st.session_state.citas["urgencia"].map(
         lambda x: "Media" if x not in ["Alta","Media","Baja"] else x
     )
@@ -335,8 +377,7 @@ modulos_nav = [
     ("inicio","Inicio"),("dashboard","Panel de Control"),
     ("confirmacion","Confirmacion de Citas"),
     ("espera","Lista de Espera"),("reportes","Reportes de Ausentismo"),
-    ("agenda_semana","Agenda Proxima Semana"),
-    ("calendario","Calendario Anual"),
+    ("agenda_semana","Agenda de Confirmaciones"),
     ("ges","Pacientes GES"),
 ]
 cols_nav = st.columns(len(modulos_nav))
@@ -414,7 +455,7 @@ if modulo == "inicio":
 elif modulo == "dashboard":
     st.markdown("<div style='padding:24px 8px;'>", unsafe_allow_html=True)
     st.markdown("<div class='hsg-section-title'>Panel de Control</div>", unsafe_allow_html=True)
-    st.markdown("<div class='hsg-section-sub'>Resumen de actividad — proximos 7 dias</div>", unsafe_allow_html=True)
+    st.markdown("<div class='hsg-section-sub'>Resumen de actividad — proximos 30 dias</div>", unsafe_allow_html=True)
 
     hoy_str = datetime.today().strftime("%Y-%m-%d")
     prox7   = (datetime.today()+timedelta(days=7)).strftime("%Y-%m-%d")
@@ -423,10 +464,23 @@ elif modulo == "dashboard":
     pend=len(semana[semana["estado"]=="Pendiente"]); ausen=len(semana[semana["estado"]=="Ausente"])
 
     c1,c2,c3,c4 = st.columns(4)
-    c1.metric("Total citas semana", total)
+    c1.metric("Total citas periodo", total)
     c2.metric("Confirmadas", conf, f"{round(conf/total*100) if total else 0}%")
     c3.metric("Pendientes de confirmar", pend, delta_color="inverse", delta=f"-{pend}")
     c4.metric("Ausencias registradas", ausen)
+
+    # Indicador de impacto del sistema
+    st.divider()
+    st.markdown("**Impacto del sistema de confirmacion automatica**")
+    ci1, ci2, ci3, ci4 = st.columns(4)
+    total_enviados = len(st.session_state.get("envios_realizados",{}))
+    confirmados_auto = len([r for r in st.session_state.get("respuestas_pacientes",{}).values() if r=="Confirmo"])
+    cancelados_auto  = len([r for r in st.session_state.get("respuestas_pacientes",{}).values() if r=="Cancelo"])
+    tasa_respuesta   = round(confirmados_auto/(total_enviados) * 100) if total_enviados > 0 else 0
+    ci1.metric("Mensajes enviados", total_enviados)
+    ci2.metric("Confirmaciones via mensaje", confirmados_auto)
+    ci3.metric("Cupos liberados via mensaje", cancelados_auto)
+    ci4.metric("Tasa de respuesta", f"{tasa_respuesta}%")
     st.divider()
 
     col_a,col_b = st.columns(2)
@@ -466,11 +520,19 @@ elif modulo == "confirmacion":
     st.markdown("<div class='hsg-section-title'>Confirmacion de Citas</div>", unsafe_allow_html=True)
     st.markdown("<div class='hsg-section-sub'>Busca una cita para confirmar, cancelar o registrar ausencia</div>", unsafe_allow_html=True)
 
-    col_f1,col_f2,col_f3,col_f4=st.columns([2,1.5,1,1])
+    col_f1,col_f2=st.columns([2,2])
     with col_f1: busqueda=st.text_input("Buscar por nombre, RUT o ID",placeholder="Ej: Gonzalez / 12345678-9 / C0023")
     with col_f2: filtro_esp=st.selectbox("Especialidad",["Todas"]+sorted(df_citas["especialidad"].unique().tolist()), key="conf_esp")
+    
+    col_f3,col_f4,col_f5=st.columns([1,1,2])
     with col_f3: filtro_estado=st.selectbox("Estado",["Todos","Pendiente","Confirmada","Cancelada","Ausente"], key="conf_estado")
-    with col_f4: filtro_urg=st.selectbox("Urgencia",["Todas","Alta","Media","Baja"], key="conf_urg")
+    with col_f4: filtro_riesgo=st.selectbox("Riesgo inasistencia",["Todos","Alto","Medio","Bajo"], key="conf_riesgo")
+    with col_f5:
+        hoy_conf = datetime.today().date()
+        fecha_max = hoy_conf + timedelta(days=90)
+        fechas_disponibles = sorted(df_citas["fecha"].unique().tolist())
+        filtro_fecha = st.selectbox("Filtrar por fecha", 
+            ["Todas las fechas"] + fechas_disponibles, key="conf_fecha")
 
     mask=pd.Series([True]*len(df_citas),index=df_citas.index)
     if busqueda:
@@ -480,7 +542,8 @@ elif modulo == "confirmacion":
               df_citas["id_cita"].str.lower().str.contains(b))
     if filtro_esp!="Todas": mask=mask&(df_citas["especialidad"]==filtro_esp)
     if filtro_estado!="Todos": mask=mask&(df_citas["estado"]==filtro_estado)
-    if filtro_urg!="Todas": mask=mask&(df_citas["urgencia"]==filtro_urg)
+    if filtro_riesgo!="Todos": mask=mask&(df_citas["riesgo_inasistencia"]==filtro_riesgo)
+    if filtro_fecha!="Todas las fechas": mask=mask&(df_citas["fecha"]==filtro_fecha)
 
     resultados = df_citas[mask].reset_index(drop=True).head(30)
     st.caption(f"{len(resultados)} resultado(s) encontrados")
@@ -490,16 +553,35 @@ elif modulo == "confirmacion":
         clase=estado.lower(); urg_clase=urgencia.lower()
         contacto_color="#137333" if row["contacto_valido"] else "#c5221f"
         contacto_txt="Valido" if row["contacto_valido"] else "Invalido — actualizar"
+        riesgo = row.get("riesgo_inasistencia","Bajo")
+        # GES info
+        ges_html = ""
+        if row.get("es_ges") and row.get("patologia_ges"):
+            f_op = row.get("fecha_oportunidad_ges","")
+            if f_op:
+                hoy_s = datetime.today().strftime("%Y-%m-%d")
+                dias_r = (datetime.strptime(f_op,"%Y-%m-%d")-datetime.today()).days
+                if f_op < hoy_s:
+                    col_ges="#7b0000"; txt_ges=f"VENCIDA hace {abs(dias_r)} dias"
+                elif dias_r <= 15:
+                    col_ges="#ea4335"; txt_ges=f"URGENTE {dias_r} dias restantes"
+                else:
+                    col_ges="#1a73e8"; txt_ges=f"Vigente {dias_r} dias restantes"
+                ges_html = f'<div class="cita-info"><b style="color:{col_ges};">GES:</b> <span style="color:#1a73e8;font-weight:600;">{row["patologia_ges"]}</span> — <span style="color:{col_ges};font-weight:700;">{txt_ges}</span></div>'
         st.markdown(f"""
         <div class="cita-card {clase}">
             <div class="cita-card-header">
                 <div class="cita-nombre">{row['nombre_paciente']}</div>
                 <div class="cita-badges">
-                    <span style="font-size:12px;color:#666;margin-right:4px;">Urgencia:</span>
-                    <span class="urg-{urg_clase}">{urgencia}</span>
-                    &nbsp;&nbsp;
                     <span style="font-size:12px;color:#666;margin-right:4px;">Estado:</span>
                     <span class="badge-{clase}">{estado}</span>
+                    &nbsp;&nbsp;
+                    <span style="font-size:12px;color:#666;margin-right:4px;">Riesgo inasistencia:</span>
+                    <span style="padding:3px 10px;border-radius:20px;font-size:12px;font-weight:700;
+                        background:{'#fce8e6' if riesgo=='Alto' else '#fef7e0' if riesgo=='Medio' else '#e6f4ea'};
+                        color:{'#c5221f' if riesgo=='Alto' else '#b06000' if riesgo=='Medio' else '#137333'};">
+                        {riesgo}
+                    </span>
                 </div>
             </div>
             <div style="display:flex;gap:36px;flex-wrap:wrap;">
@@ -512,8 +594,8 @@ elif modulo == "confirmacion":
                 <div class="cita-info"><b>Edad:</b> {row['edad']} años</div>
                 <div class="cita-info"><b>Contacto:</b> <span style="color:{contacto_color};font-weight:600;">{contacto_txt}</span></div>
                 <div class="cita-info"><b>ID:</b> {row['id_cita']}</div>
-
             </div>
+            {ges_html}
         </div>
         """, unsafe_allow_html=True)
         # ── Disponibilidad del medico asignado
@@ -608,8 +690,45 @@ elif modulo == "confirmacion":
         if b2.button("Cancelar y liberar cupo",key=f"canc_{row['id_cita']}"):
             st.session_state.citas.loc[st.session_state.citas["id_cita"]==row["id_cita"],"estado"]="Cancelada"
             sync_agenda()
-            st.warning(f"Cupo de {row['nombre_paciente']} liberado.")
+            esp_liberada = row["especialidad"]
+            siguiente_espera = st.session_state.espera[
+                (st.session_state.espera["especialidad"]==esp_liberada) &
+                (st.session_state.espera["estado_espera"]=="Esperando")
+            ].sort_values("prioridad", key=lambda x: x.map({"Alta":0,"Media":1,"Baja":2}))
+            if len(siguiente_espera) > 0:
+                sig = siguiente_espera.iloc[0]
+                # Guardar en session state para mostrar despues del rerun
+                st.session_state["cupo_liberado"] = {
+                    "id_cita": row["id_cita"],
+                    "especialidad": esp_liberada,
+                    "siguiente_nombre": sig["nombre"],
+                    "siguiente_prioridad": sig["prioridad"],
+                    "fecha": row["fecha"],
+                    "hora": row["hora"]
+                }
+            else:
+                st.session_state["cupo_liberado"] = None
             st.rerun()
+
+        # Mostrar propuesta de asignacion si hay cupo liberado
+        if st.session_state.get("cupo_liberado") and st.session_state["cupo_liberado"].get("id_cita") == row["id_cita"]:
+            info_cupo = st.session_state["cupo_liberado"]
+            st.warning(f"Cupo liberado en {info_cupo['especialidad']} — {info_cupo['fecha']} {info_cupo['hora']} hrs")
+            st.info(f"Siguiente paciente en lista de espera: **{info_cupo['siguiente_nombre']}** (Prioridad {info_cupo['siguiente_prioridad']})")
+            col_asig1, col_asig2 = st.columns([1,3])
+            if col_asig1.button(f"Asignar a {info_cupo['siguiente_nombre']}", key=f"auto_asig_{row['id_cita']}", type="primary"):
+                st.session_state.citas.loc[st.session_state.citas["id_cita"]==row["id_cita"],"estado"]="Confirmada"
+                st.session_state.citas.loc[st.session_state.citas["id_cita"]==row["id_cita"],"nombre_paciente"]=info_cupo["siguiente_nombre"]
+                idx_esp = st.session_state.espera[st.session_state.espera["nombre"]==info_cupo["siguiente_nombre"]].index
+                if len(idx_esp)>0:
+                    st.session_state.espera.loc[idx_esp[0],"estado_espera"]="Asignado"
+                sync_agenda()
+                st.session_state["cupo_liberado"] = None
+                st.success(f"Cupo asignado a {info_cupo['siguiente_nombre']}.")
+                st.rerun()
+            if col_asig2.button("Mantener cupo libre por ahora", key=f"keep_libre_{row['id_cita']}"):
+                st.session_state["cupo_liberado"] = None
+                st.rerun()
         if b3.button("Registrar ausencia",key=f"aus_{row['id_cita']}"):
             st.session_state.citas.loc[st.session_state.citas["id_cita"]==row["id_cita"],"estado"]="Ausente"
             sync_agenda()
@@ -662,7 +781,7 @@ elif modulo == "espera":
         # Selector de semana por fecha
         hoy_esp = datetime.today().replace(hour=0,minute=0,second=0,microsecond=0)
         semanas_disponibles = []
-        for i in range(5):  # proximas 5 semanas
+        for i in range(13):  # proximas 13 semanas (90 dias)
             lunes = hoy_esp + timedelta(days=(7*i - hoy_esp.weekday()))
             viernes = lunes + timedelta(days=4)
             label = f"{lunes.strftime('%d %b')} — {viernes.strftime('%d %b %Y')}"
@@ -736,7 +855,7 @@ elif modulo == "espera":
 
     # Buscar dias disponibles en los proximos 30 dias
     hoy_asig = datetime.today().replace(hour=0,minute=0,second=0,microsecond=0)
-    todas_fechas_asig = [(hoy_asig+timedelta(days=i)).strftime("%Y-%m-%d") for i in range(30)
+    todas_fechas_asig = [(hoy_asig+timedelta(days=i)).strftime("%Y-%m-%d") for i in range(90)
                          if (hoy_asig+timedelta(days=i)).weekday() < 5]
     dias_opciones = []
     for fecha in todas_fechas_asig:
@@ -759,14 +878,23 @@ elif modulo == "espera":
             idx_esp = st.session_state.espera[st.session_state.espera["nombre"]==pac_sel].index
             if len(idx_esp)>0:
                 st.session_state.espera.loc[idx_esp[0],"estado_espera"] = "Asignado"
+            # Buscar datos reales del paciente en lista de espera
+            pac_data = st.session_state.espera[st.session_state.espera["nombre"]==pac_sel]
+            pac_info = pac_data.iloc[0] if len(pac_data)>0 else {}
             nueva_cita = {
                 "id_cita": f"C{len(st.session_state.citas)+1:04d}",
                 "nombre_paciente": pac_sel,
-                "edad": 0, "rut": "—", "telefono": "—", "comuna": "—",
+                "edad": pac_info.get("edad", 0) if hasattr(pac_info, "get") else 0,
+                "rut": pac_info.get("rut","—") if hasattr(pac_info, "get") else "—",
+                "telefono": pac_info.get("telefono","—") if hasattr(pac_info, "get") else "—",
+                "comuna": pac_info.get("comuna","—") if hasattr(pac_info, "get") else "—",
                 "especialidad": esp_asig, "medico": med_sel,
                 "fecha": fecha_sel, "hora": hora_sel,
                 "estado": "Confirmada", "urgencia": "Media",
-                "causa_ausencia": "", "contacto_valido": True
+                "causa_ausencia": "", "contacto_valido": True,
+                "es_ges": False, "patologia_ges": "",
+                "fecha_diagnostico_ges": "", "fecha_oportunidad_ges": "",
+                "riesgo_inasistencia": "Bajo"
             }
             st.session_state.citas = pd.concat(
                 [st.session_state.citas, pd.DataFrame([nueva_cita])], ignore_index=True)
@@ -836,16 +964,24 @@ elif modulo == "reportes":
 # ─────────────────────────────────────────────
 elif modulo == "agenda_semana":
     st.markdown("<div style='padding:24px 8px;'>", unsafe_allow_html=True)
-    st.markdown("<div class='hsg-section-title'>Agenda Proxima Semana</div>", unsafe_allow_html=True)
-    st.markdown("<div class='hsg-section-sub'>Listado de pacientes con hora la semana siguiente — para llamada de confirmacion proactiva</div>", unsafe_allow_html=True)
+    st.markdown("<div class='hsg-section-title'>Agenda de Confirmaciones</div>", unsafe_allow_html=True)
+    st.markdown("<div class='hsg-section-sub'>Selecciona cualquier semana de los proximos 90 dias para gestionar confirmaciones proactivas</div>", unsafe_allow_html=True)
 
-    # Calcular semana proxima (lunes a viernes)
+    # Selector de semana - proximas 13 semanas (90 dias)
     hoy_ag = datetime.today()
-    dias_hasta_lunes = (7 - hoy_ag.weekday()) % 7
-    if dias_hasta_lunes == 0:
-        dias_hasta_lunes = 7
-    lunes_prox = hoy_ag + timedelta(days=dias_hasta_lunes)
-    lunes_prox = lunes_prox.replace(hour=0, minute=0, second=0, microsecond=0)
+    semanas_opciones = []
+    for i in range(13):
+        lunes_op = hoy_ag + timedelta(days=(7-hoy_ag.weekday())%7 + 7*i)
+        if i == 0 and (7-hoy_ag.weekday())%7 == 0:
+            lunes_op = hoy_ag + timedelta(days=7)
+        lunes_op = lunes_op.replace(hour=0,minute=0,second=0,microsecond=0)
+        viernes_op = lunes_op + timedelta(days=4)
+        label = f"Semana {i+1} — {lunes_op.strftime('%d/%m')} al {viernes_op.strftime('%d/%m/%Y')}"
+        semanas_opciones.append((label, lunes_op))
+
+    semana_sel_label = st.selectbox("Seleccionar semana a gestionar",
+        [s[0] for s in semanas_opciones], key="semana_agenda_prox")
+    lunes_prox = dict(semanas_opciones)[semana_sel_label]
     viernes_prox = lunes_prox + timedelta(days=4)
 
     fechas_prox = [(lunes_prox + timedelta(days=i)).strftime("%Y-%m-%d") for i in range(5)]
@@ -865,7 +1001,11 @@ elif modulo == "agenda_semana":
     """, unsafe_allow_html=True)
 
     # Filtrar citas de la semana proxima
+    riesgo_orden = {"Alto":0,"Medio":1,"Bajo":2}
     citas_prox = df_citas[(df_citas["fecha"].isin(fechas_prox)) & (df_citas["estado"].isin(["Pendiente","Confirmada"]))].copy()
+    if "riesgo_inasistencia" in citas_prox.columns:
+        citas_prox["riesgo_orden"] = citas_prox["riesgo_inasistencia"].map(riesgo_orden)
+        citas_prox = citas_prox.sort_values(["riesgo_orden","hora"])
     citas_prox["dia_semana"] = citas_prox["fecha"].apply(
         lambda f: dias_nombres[datetime.strptime(f, "%Y-%m-%d").weekday()]
     )
@@ -964,9 +1104,305 @@ elif modulo == "agenda_semana":
 
     st.divider()
 
+    # ── CONFIRMACION AUTOMATICA ──
+    st.markdown("### Confirmacion automatica de citas")
+    st.caption("Simula el envio de mensajes automaticos (SMS/WhatsApp) a los pacientes pendientes de confirmar.")
+
+    pendientes_auto = citas_prox[citas_prox["estado"]=="Pendiente"].copy()
+    con_contacto    = pendientes_auto[pendientes_auto["contacto_valido"]==True]
+    sin_contacto_auto = pendientes_auto[pendientes_auto["contacto_valido"]==False]
+
+    col_auto1, col_auto2, col_auto3 = st.columns(3)
+    col_auto1.metric("Pendientes de confirmar", len(pendientes_auto))
+    col_auto2.metric("Con contacto valido", len(con_contacto), delta=f"{len(con_contacto)} mensajes listos")
+    col_auto3.metric("Sin contacto valido", len(sin_contacto_auto), delta_color="inverse", delta=f"-{len(sin_contacto_auto)} requieren llamada")
+
+    # Selector de tipo de mensaje
+    tipo_msg = st.selectbox("Tipo de mensaje", 
+        ["SMS", "WhatsApp", "Ambos (SMS + WhatsApp)"], key="tipo_msg")
+    
+    # Preview del mensaje
+    st.markdown("**Vista previa del mensaje:**")
+    if len(con_contacto) > 0:
+        ejemplo = con_contacto.iloc[0]
+        fecha_ej = fecha_es(datetime.strptime(ejemplo['fecha'], '%Y-%m-%d'))
+        st.markdown(f"""
+        <div style="background:#e8f5e9;border-left:4px solid #34a853;border-radius:8px;padding:16px 20px;font-size:13px;color:#1a3a6b;max-width:500px;">
+            <b>Hospital San Gabriel</b><br><br>
+            Estimado/a <b>{ejemplo['nombre_paciente']}</b>,<br><br>
+            Le recordamos que tiene una cita medica programada:<br>
+            📅 <b>Fecha:</b> {fecha_ej}<br>
+            🕐 <b>Hora:</b> {ejemplo['hora']} hrs<br>
+            👨‍⚕️ <b>Medico:</b> {ejemplo.get('medico','—')}<br>
+            🏥 <b>Especialidad:</b> {ejemplo['especialidad']}<br><br>
+            Por favor confirme su asistencia respondiendo:<br>
+            <b>1</b> para CONFIRMAR &nbsp;|&nbsp; <b>2</b> para CANCELAR<br><br>
+            <i>Hospital San Gabriel — Red Asistencial Sur</i>
+        </div>
+        """, unsafe_allow_html=True)
+
+    st.markdown("")
+
+    # Inicializar estado de envios
+    if "envios_realizados" not in st.session_state:
+        st.session_state.envios_realizados = {}
+
+    col_btn1, col_btn2 = st.columns([1,3])
+    
+    col_sim = st.columns([1,1,2])[1]
+    if "simulacion_activa" not in st.session_state:
+        st.session_state.simulacion_activa = False
+
+    if col_btn1.button("Enviar mensajes automaticos", type="primary",
+                        disabled=len(con_contacto)==0):
+        # Simular envio con mensaje personalizado por paciente
+        enviados = 0
+        fallidos = 0
+        for _, row in con_contacto.iterrows():
+            fecha_msg = fecha_es(datetime.strptime(row['fecha'], '%Y-%m-%d'))
+            mensaje_personalizado = f"""Hospital San Gabriel
+Estimado/a {row['nombre_paciente']},
+Le recordamos su cita medica:
+Fecha: {fecha_msg}
+Hora: {row['hora']} hrs
+Medico: {row.get('medico','—')}
+Especialidad: {row['especialidad']}
+Responda 1 para CONFIRMAR o 2 para CANCELAR.
+Hospital San Gabriel - Red Asistencial Sur"""
+            st.session_state.envios_realizados[row["id_cita"]] = {
+                "estado": "Enviado",
+                "tipo": tipo_msg,
+                "hora_envio": datetime.now().strftime("%H:%M"),
+                "telefono": row["telefono"],
+                "mensaje": mensaje_personalizado
+            }
+            enviados += 1
+        for _, row in sin_contacto_auto.iterrows():
+            st.session_state.envios_realizados[row["id_cita"]] = {
+                "estado": "Fallido",
+                "tipo": tipo_msg,
+                "hora_envio": datetime.now().strftime("%H:%M"),
+                "telefono": row["telefono"],
+                "mensaje": ""
+            }
+            fallidos += 1
+        st.success(f"{enviados} mensajes personalizados enviados via {tipo_msg}.")
+        if fallidos > 0:
+            st.warning(f"{fallidos} mensajes fallidos por contacto invalido — requieren llamada manual.")
+        st.rerun()
+
+    # Boton simular respuestas automaticas
+    if st.session_state.envios_realizados:
+        enviados_ids = [k for k,v in st.session_state.envios_realizados.items() if v["estado"]=="Enviado"]
+        sin_resp_ids = [k for k in enviados_ids if k not in st.session_state.get("respuestas_pacientes",{})]
+
+        if len(sin_resp_ids) > 0:
+            st.markdown("")
+            if st.button(f"Simular respuestas entrantes ({len(sin_resp_ids)} pendientes)", type="secondary"):
+                if "respuestas_pacientes" not in st.session_state:
+                    st.session_state.respuestas_pacientes = {}
+                for id_cita in sin_resp_ids:
+                    # 60% confirma, 20% cancela, 20% no responde
+                    resultado = random.choices(
+                        ["Confirmo", "Cancelo", "Sin respuesta"],
+                        weights=[60, 20, 20]
+                    )[0]
+                    st.session_state.respuestas_pacientes[id_cita] = resultado
+                    if resultado == "Confirmo":
+                        st.session_state.citas.loc[
+                            st.session_state.citas["id_cita"]==id_cita,"estado"] = "Confirmada"
+                    elif resultado == "Cancelo":
+                        st.session_state.citas.loc[
+                            st.session_state.citas["id_cita"]==id_cita,"estado"] = "Cancelada"
+                sync_agenda()
+                confirmados_sim = len([r for r in st.session_state.respuestas_pacientes.values() if r=="Confirmo"])
+                cancelados_sim  = len([r for r in st.session_state.respuestas_pacientes.values() if r=="Cancelo"])
+                sin_resp_sim    = len([r for r in st.session_state.respuestas_pacientes.values() if r=="Sin respuesta"])
+                st.success(f"Respuestas simuladas: {confirmados_sim} confirmaron, {cancelados_sim} cancelaron, {sin_resp_sim} no respondieron.")
+                st.rerun()
+
+    # Mostrar registro de envios y respuestas
+    if st.session_state.envios_realizados:
+        st.markdown("**Bandeja de respuestas — registra la respuesta recibida por cada paciente:**")
+
+        # Inicializar respuestas
+        if "respuestas_pacientes" not in st.session_state:
+            st.session_state.respuestas_pacientes = {}
+
+        # Mostrar TODOS los cupos pendientes de asignar
+        if st.session_state.get("cupos_liberados") and len(st.session_state.cupos_liberados) > 0:
+            st.markdown("---")
+            st.markdown(f"**{len(st.session_state.cupos_liberados)} cupo(s) liberado(s) esperando asignacion:**")
+            for idx_cupo, info_cupo_top in enumerate(st.session_state.cupos_liberados):
+                st.warning(f"Cupo {idx_cupo+1}: **{info_cupo_top['especialidad']}** — {info_cupo_top['fecha']} {info_cupo_top['hora']} hrs (de {info_cupo_top['paciente_original']})")
+                st.info(f"Siguiente en lista de espera: **{info_cupo_top['siguiente_nombre']}** (Prioridad {info_cupo_top['siguiente_prioridad']})")
+                col_top1, col_top2 = st.columns([1,3])
+                if col_top1.button(f"Asignar a {info_cupo_top['siguiente_nombre']}", key=f"top_asig_{idx_cupo}", type="primary"):
+                    id_c_top = info_cupo_top["id_cita"]
+                    st.session_state.citas.loc[st.session_state.citas["id_cita"]==id_c_top,"estado"]="Confirmada"
+                    st.session_state.citas.loc[st.session_state.citas["id_cita"]==id_c_top,"nombre_paciente"]=info_cupo_top["siguiente_nombre"]
+                    idx_top = st.session_state.espera[st.session_state.espera["nombre"]==info_cupo_top["siguiente_nombre"]].index
+                    if len(idx_top)>0:
+                        st.session_state.espera.loc[idx_top[0],"estado_espera"]="Asignado"
+                    sync_agenda()
+                    st.session_state.cupos_liberados.pop(idx_cupo)
+                    st.success(f"Cupo asignado a {info_cupo_top['siguiente_nombre']}.")
+                    st.rerun()
+                if col_top2.button("Mantener cupo libre", key=f"top_keep_{idx_cupo}"):
+                    st.session_state.cupos_liberados.pop(idx_cupo)
+                    st.rerun()
+            st.markdown("---")
+
+        for id_cita, info in st.session_state.envios_realizados.items():
+            cita_row = df_citas[df_citas["id_cita"]==id_cita]
+            if len(cita_row) == 0:
+                continue
+            row = cita_row.iloc[0]
+            respuesta_actual = st.session_state.respuestas_pacientes.get(id_cita, "Sin respuesta")
+            estado_envio = info["estado"]
+
+            # Color segun respuesta
+            if respuesta_actual == "Confirmo":
+                border_color = "#34a853"; bg_color = "#f0faf0"
+            elif respuesta_actual == "Cancelo":
+                border_color = "#ea4335"; bg_color = "#fff5f5"
+            elif estado_envio == "Fallido":
+                border_color = "#9aa0a6"; bg_color = "#f8f9fa"
+            else:
+                border_color = "#f9ab00"; bg_color = "#fffdf0"
+
+            fecha_display_msg = fecha_es(datetime.strptime(row['fecha'], '%Y-%m-%d')) if row['fecha'] else row['fecha']
+            msg_preview = info.get('mensaje','').replace('\n','<br>')
+            st.markdown(f"""
+            <div style="background:{bg_color};border-left:4px solid {border_color};
+                        border-radius:8px;padding:12px 16px;margin-bottom:8px;">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+                    <div>
+                        <b style="font-size:14px;color:#1a3a6b;">{row['nombre_paciente']}</b>
+                        <span style="font-size:12px;color:#666;margin-left:12px;">{row['especialidad']} — {fecha_display_msg} {row['hora']} hrs</span>
+                    </div>
+                    <div style="font-size:12px;color:#666;">
+                        {info['tipo']} → {info['telefono']} — {info['hora_envio']}
+                        &nbsp;|&nbsp;
+                        <b style="color:{'#34a853' if estado_envio=='Enviado' else '#c5221f'};">
+                            {'Enviado' if estado_envio=='Enviado' else 'Fallido — llamar manualmente'}
+                        </b>
+                    </div>
+                </div>
+                {f'<div style="background:#f8f9fa;border-radius:6px;padding:8px 12px;font-size:12px;color:#444;max-width:500px;">{msg_preview}</div>' if msg_preview else ""}
+            </div>
+            """, unsafe_allow_html=True)
+
+            if estado_envio == "Enviado":
+                col_r1, col_r2, col_r3, col_r4 = st.columns([1,1,1,2])
+                if col_r1.button("1 - Confirmo", key=f"resp_conf_{id_cita}",
+                                  type="primary" if respuesta_actual=="Sin respuesta" else "secondary"):
+                    st.session_state.respuestas_pacientes[id_cita] = "Confirmo"
+                    st.session_state.citas.loc[st.session_state.citas["id_cita"]==id_cita,"estado"] = "Confirmada"
+                    sync_agenda()
+                    st.success(f"{row['nombre_paciente']} confirmo su asistencia via {info['tipo']}.")
+                    st.rerun()
+                if col_r2.button("2 - Cancelo", key=f"resp_canc_{id_cita}"):
+                    st.session_state.respuestas_pacientes[id_cita] = "Cancelo"
+                    st.session_state.citas.loc[st.session_state.citas["id_cita"]==id_cita,"estado"] = "Cancelada"
+                    sync_agenda()
+                    # Asignar automaticamente al siguiente en lista de espera
+                    esp_sms = row["especialidad"]
+                    sig_sms = st.session_state.espera[
+                        (st.session_state.espera["especialidad"]==esp_sms) &
+                        (st.session_state.espera["estado_espera"]=="Esperando")
+                    ].sort_values("prioridad", key=lambda x: x.map({"Alta":0,"Media":1,"Baja":2}))
+                    if len(sig_sms)>0:
+                        sig = sig_sms.iloc[0]
+                        # Agregar a lista de cupos pendientes
+                        if "cupos_liberados" not in st.session_state:
+                            st.session_state.cupos_liberados = []
+                        # Verificar que no este ya en la lista
+                        ids_pendientes = [c["id_cita"] for c in st.session_state.cupos_liberados]
+                        if id_cita not in ids_pendientes:
+                            st.session_state.cupos_liberados.append({
+                                "id_cita": id_cita,
+                                "especialidad": esp_sms,
+                                "siguiente_nombre": sig["nombre"],
+                                "siguiente_prioridad": sig["prioridad"],
+                                "fecha": row["fecha"],
+                                "hora": row["hora"],
+                                "paciente_original": row["nombre_paciente"]
+                            })
+                        st.warning(f"{row['nombre_paciente']} cancelo via {info['tipo']}.")
+                    else:
+                        st.warning(f"{row['nombre_paciente']} cancelo. No hay pacientes en espera para {esp_sms}.")
+                    st.rerun()
+                if col_r3.button("Sin respuesta", key=f"resp_nr_{id_cita}"):
+                    st.session_state.respuestas_pacientes[id_cita] = "Sin respuesta"
+                    st.info(f"{row['nombre_paciente']} no respondio. Intentar llamada manual.")
+                    st.rerun()
+                # Mostrar respuesta actual
+                if respuesta_actual != "Sin respuesta":
+                    col_r4.markdown(f"**Respuesta:** {respuesta_actual}", unsafe_allow_html=False)
+            else:
+                st.caption("Requiere llamada manual — contacto invalido")
+
+            # Mostrar propuesta de asignacion si este cupo fue liberado via SMS
+            if st.session_state.get("cupo_liberado") and st.session_state["cupo_liberado"].get("id_cita") == id_cita:
+                info_cupo = st.session_state["cupo_liberado"]
+                st.info(f"Siguiente en lista de espera: **{info_cupo['siguiente_nombre']}** (Prioridad {info_cupo['siguiente_prioridad']})")
+                col_sa1, col_sa2 = st.columns([1,3])
+                if col_sa1.button(f"Asignar a {info_cupo['siguiente_nombre']}", key=f"sms_asig_{id_cita}", type="primary"):
+                    st.session_state.citas.loc[st.session_state.citas["id_cita"]==id_cita,"estado"]="Confirmada"
+                    st.session_state.citas.loc[st.session_state.citas["id_cita"]==id_cita,"nombre_paciente"]=info_cupo["siguiente_nombre"]
+                    idx_esp2 = st.session_state.espera[st.session_state.espera["nombre"]==info_cupo["siguiente_nombre"]].index
+                    if len(idx_esp2)>0:
+                        st.session_state.espera.loc[idx_esp2[0],"estado_espera"]="Asignado"
+                    sync_agenda()
+                    st.session_state["cupo_liberado"] = None
+                    st.success(f"Cupo asignado a {info_cupo['siguiente_nombre']}.")
+                    st.rerun()
+                if col_sa2.button("Mantener cupo libre", key=f"sms_keep_{id_cita}"):
+                    st.session_state["cupo_liberado"] = None
+                    st.rerun()
+
+            st.markdown("<hr style='margin:4px 0;border-color:#f0f0f0;'>", unsafe_allow_html=True)
+
+        # Resumen de respuestas
+        total_env = len([i for i in st.session_state.envios_realizados.values() if i["estado"]=="Enviado"])
+        confirmados_resp = len([r for r in st.session_state.respuestas_pacientes.values() if r=="Confirmo"])
+        cancelados_resp  = len([r for r in st.session_state.respuestas_pacientes.values() if r=="Cancelo"])
+        sin_resp = total_env - confirmados_resp - cancelados_resp
+
+        st.divider()
+        st.markdown("**Resumen de respuestas recibidas:**")
+        cr1, cr2, cr3 = st.columns(3)
+        cr1.metric("Confirmaron", confirmados_resp)
+        cr2.metric("Cancelaron", cancelados_resp)
+        cr3.metric("Sin respuesta aun", sin_resp)
+
+        # Exportar
+        registros = []
+        for id_cita, info in st.session_state.envios_realizados.items():
+            cita_row = df_citas[df_citas["id_cita"]==id_cita]
+            if len(cita_row) > 0:
+                row = cita_row.iloc[0]
+                registros.append({
+                    "Paciente": row["nombre_paciente"],
+                    "Telefono": info["telefono"],
+                    "Canal": info["tipo"],
+                    "Estado envio": info["estado"],
+                    "Respuesta": st.session_state.respuestas_pacientes.get(id_cita, "Sin respuesta"),
+                    "Hora envio": info["hora_envio"],
+                    "Especialidad": row["especialidad"],
+                    "Fecha cita": row["fecha"]
+                })
+        if registros:
+            csv_reg = pd.DataFrame(registros).to_csv(index=False).encode("utf-8")
+            st.download_button("Descargar registro completo (CSV)",
+                             csv_reg, "registro_envios.csv", "text/csv")
+
+    st.divider()
+
     # Resumen de llamadas pendientes
-    st.markdown("**Resumen de llamadas pendientes**")
-    pendientes_df = citas_prox[citas_prox["estado"]=="Pendiente"][
+    st.markdown("**Pacientes que requieren llamada manual (contacto invalido)**")
+    pendientes_df = citas_prox[(citas_prox["estado"]=="Pendiente") & (citas_prox["contacto_valido"]==False)][
         ["nombre_paciente","especialidad","fecha_display","hora","telefono","contacto_valido","urgencia"]
     ].copy()
     pendientes_df = pendientes_df.sort_values(["urgencia","fecha_display"], 
@@ -982,153 +1418,6 @@ elif modulo == "agenda_semana":
         st.success("Todos los pacientes de la proxima semana ya tienen su cita confirmada.")
 
 
-
-# ─────────────────────────────────────────────
-# CALENDARIO ANUAL
-# ─────────────────────────────────────────────
-elif modulo == "calendario":
-    import calendar as cal_lib
-    st.markdown("<div style='padding:24px 8px;'>", unsafe_allow_html=True)
-    st.markdown("<div class='hsg-section-title'>Calendario Anual de Citas</div>", unsafe_allow_html=True)
-    st.markdown("<div class='hsg-section-sub'>Vista mensual — se actualiza automaticamente al agendar nuevas citas</div>", unsafe_allow_html=True)
-
-    col_f1, col_f2, col_f3 = st.columns([1,2,2])
-    anio_sel   = col_f1.selectbox("Año", [2026, 2027], key="cal_anio")
-    esp_cal    = col_f2.selectbox("Especialidad", ["Todas"]+sorted(df_citas["especialidad"].unique().tolist()), key="cal_esp")
-    estado_cal = col_f3.selectbox("Estado", ["Todos","Confirmada","Pendiente","Cancelada","Ausente"], key="cal_estado")
-
-    # Filtrar citas
-    citas_cal = df_citas.copy()
-    citas_cal["anio"] = citas_cal["fecha"].str[:4].astype(int)
-    citas_cal["mes"]  = citas_cal["fecha"].str[5:7].astype(int)
-    citas_cal["dia"]  = citas_cal["fecha"].str[8:10].astype(int)
-    citas_cal = citas_cal[citas_cal["anio"]==anio_sel]
-    if esp_cal != "Todas":
-        citas_cal = citas_cal[citas_cal["especialidad"]==esp_cal]
-    if estado_cal != "Todos":
-        citas_cal = citas_cal[citas_cal["estado"]==estado_cal]
-
-    MESES = {
-        1:"Enero", 2:"Febrero", 3:"Marzo", 4:"Abril",
-        5:"Mayo", 6:"Junio", 7:"Julio", 8:"Agosto",
-        9:"Septiembre", 10:"Octubre", 11:"Noviembre", 12:"Diciembre"
-    }
-    COLOR_ESTADO = {"Confirmada":"#34a853","Pendiente":"#f9ab00","Cancelada":"#ea4335","Ausente":"#9aa0a6"}
-    hoy = datetime.today()
-
-    st.divider()
-
-    # Mostrar meses de 3 en 3
-    for fila in range(4):
-        cols = st.columns(3)
-        for col_idx in range(3):
-            mes_num = fila*3 + col_idx + 1
-            with cols[col_idx]:
-                citas_mes = citas_cal[citas_cal["mes"]==mes_num]
-                total_mes = len(citas_mes)
-                conf_mes  = len(citas_mes[citas_mes["estado"]=="Confirmada"])
-                pend_mes  = len(citas_mes[citas_mes["estado"]=="Pendiente"])
-
-                # Header
-                st.markdown(f"""
-                <div style="background:#1a3a6b;border-radius:8px 8px 0 0;padding:8px 14px;
-                            display:flex;justify-content:space-between;align-items:center;margin-bottom:0;">
-                    <b style="color:#ffffff;font-size:14px;">{MESES[mes_num]}</b>
-                    <b style="color:#ffffff;font-size:12px;">{total_mes} citas</b>
-                </div>
-                """, unsafe_allow_html=True)
-
-                # Agrupar citas por dia
-                citas_por_dia = citas_mes.groupby("dia").apply(
-                    lambda x: x["estado"].value_counts().idxmax()
-                ).to_dict() if len(citas_mes)>0 else {}
-                conteo_por_dia = citas_mes.groupby("dia").size().to_dict() if len(citas_mes)>0 else {}
-
-                # Construir matriz del mes (7 columnas = dias semana)
-                matriz = cal_lib.monthcalendar(anio_sel, mes_num)
-                dias_header = ["L","M","X","J","V","S","D"]
-
-                # Usar dataframe estilizado
-                rows = []
-                for semana in matriz:
-                    fila_data = {}
-                    for i, dia in enumerate(semana):
-                        if dia == 0:
-                            fila_data[dias_header[i]] = ""
-                        else:
-                            n = conteo_por_dia.get(dia, 0)
-                            if n > 0:
-                                fila_data[dias_header[i]] = f"{dia}({n})"
-                            else:
-                                fila_data[dias_header[i]] = str(dia)
-                    rows.append(fila_data)
-
-                df_mes = pd.DataFrame(rows, columns=dias_header)
-
-                def estilo_celda(val):
-                    if val == "":
-                        return "background-color:#f8f9fa;color:#f8f9fa;"
-                    try:
-                        if "(" in str(val):
-                            dia_v = int(str(val).split("(")[0])
-                            fecha_v = f"{anio_sel}-{mes_num:02d}-{dia_v:02d}"
-                            citas_d = citas_mes[citas_mes["dia"]==dia_v]
-                            if len(citas_d)>0:
-                                estado_dom = citas_d["estado"].value_counts().idxmax()
-                                color = COLOR_ESTADO.get(estado_dom,"#1a73e8")
-                                return f"background-color:{color}22;color:{color};font-weight:700;border-radius:4px;"
-                        dia_v = int(str(val))
-                        if anio_sel==hoy.year and mes_num==hoy.month and dia_v==hoy.day:
-                            return "background-color:#1a3a6b;color:white;font-weight:900;border-radius:4px;"
-                    except:
-                        pass
-                    return "color:#333;"
-
-                st.dataframe(
-                    df_mes.style.map(estilo_celda),
-                    use_container_width=True,
-                    hide_index=True,
-                    height=int(len(matriz)*35 + 38)
-                )
-
-                # Mini resumen
-                if total_mes > 0:
-                    st.markdown(f"""
-                    <div style="display:flex;gap:6px;margin-top:2px;margin-bottom:12px;">
-                        <span style="font-size:11px;background:#e6f4ea;color:#137333;padding:2px 8px;border-radius:10px;">{conf_mes} conf.</span>
-                        <span style="font-size:11px;background:#fef7e0;color:#b06000;padding:2px 8px;border-radius:10px;">{pend_mes} pend.</span>
-                    </div>
-                    """, unsafe_allow_html=True)
-                else:
-                    st.markdown("<div style='margin-bottom:12px;'></div>", unsafe_allow_html=True)
-
-    st.divider()
-
-    # Grafico resumen anual
-    st.markdown("**Resumen anual de citas por mes**")
-    resumen_anual = []
-    for mes_num in range(1,13):
-        citas_m = citas_cal[citas_cal["mes"]==mes_num]
-        resumen_anual.append({
-            "Mes": MESES[mes_num][:3],
-            "Confirmadas": len(citas_m[citas_m["estado"]=="Confirmada"]),
-            "Pendientes":  len(citas_m[citas_m["estado"]=="Pendiente"]),
-            "Canceladas":  len(citas_m[citas_m["estado"]=="Cancelada"]),
-            "Ausentes":    len(citas_m[citas_m["estado"]=="Ausente"]),
-        })
-    df_res = pd.DataFrame(resumen_anual)
-    fig_anual = px.bar(
-        df_res.melt(id_vars="Mes", var_name="Estado", value_name="Citas"),
-        x="Mes", y="Citas", color="Estado", barmode="stack",
-        color_discrete_map={"Confirmadas":"#34a853","Pendientes":"#f9ab00",
-                            "Canceladas":"#ea4335","Ausentes":"#9aa0a6"}
-    )
-    fig_anual.update_layout(
-        margin=dict(l=0,r=0,t=10,b=0), height=280,
-        plot_bgcolor="white", paper_bgcolor="white",
-        legend=dict(orientation="h",y=-0.25)
-    )
-    st.plotly_chart(fig_anual, use_container_width=True)
 
 # ─────────────────────────────────────────────
 # MODULO GES
@@ -1239,13 +1528,50 @@ elif modulo == "ges":
             if bb.button("Cancelar cupo", key=f"ges_canc_{row['id_cita']}"):
                 st.session_state.citas.loc[st.session_state.citas["id_cita"]==row["id_cita"],"estado"]="Cancelada"
                 sync_agenda()
-                st.warning(f"Cupo GES liberado.")
+                esp_ges = row["especialidad"]
+                sig_ges = st.session_state.espera[
+                    (st.session_state.espera["especialidad"]==esp_ges) &
+                    (st.session_state.espera["estado_espera"]=="Esperando")
+                ].sort_values("prioridad", key=lambda x: x.map({"Alta":0,"Media":1,"Baja":2}))
+                if len(sig_ges)>0:
+                    sig = sig_ges.iloc[0]
+                    st.session_state["cupo_liberado"] = {
+                        "id_cita": row["id_cita"],
+                        "especialidad": esp_ges,
+                        "siguiente_nombre": sig["nombre"],
+                        "siguiente_prioridad": sig["prioridad"],
+                        "fecha": row["fecha"],
+                        "hora": row["hora"]
+                    }
+                else:
+                    st.session_state["cupo_liberado"] = None
                 st.rerun()
-            if bc.button("Registrar ausencia", key=f"ges_aus_{row['id_cita']}"):
-                st.session_state.citas.loc[st.session_state.citas["id_cita"]==row["id_cita"],"estado"]="Ausente"
-                st.error(f"Ausencia GES registrada.")
-                st.rerun()
-            st.markdown("<hr>", unsafe_allow_html=True)
+
+        # Mostrar propuesta de asignacion GES
+        if st.session_state.get("cupo_liberado") and st.session_state["cupo_liberado"].get("id_cita") == row["id_cita"]:
+                info_cupo = st.session_state["cupo_liberado"]
+                st.warning(f"Cupo GES liberado en {info_cupo['especialidad']} — {info_cupo['fecha']} {info_cupo['hora']} hrs")
+                st.info(f"Siguiente en lista de espera: **{info_cupo['siguiente_nombre']}** (Prioridad {info_cupo['siguiente_prioridad']})")
+                col_g1, col_g2 = st.columns([1,3])
+                if col_g1.button(f"Asignar a {info_cupo['siguiente_nombre']}", key=f"ges_auto_asig_{row['id_cita']}", type="primary"):
+                    st.session_state.citas.loc[st.session_state.citas["id_cita"]==row["id_cita"],"estado"]="Confirmada"
+                    st.session_state.citas.loc[st.session_state.citas["id_cita"]==row["id_cita"],"nombre_paciente"]=info_cupo["siguiente_nombre"]
+                    idx_esp = st.session_state.espera[st.session_state.espera["nombre"]==info_cupo["siguiente_nombre"]].index
+                    if len(idx_esp)>0:
+                        st.session_state.espera.loc[idx_esp[0],"estado_espera"]="Asignado"
+                    sync_agenda()
+                    st.session_state["cupo_liberado"] = None
+                    st.success(f"Cupo GES asignado a {info_cupo['siguiente_nombre']}.")
+                    st.rerun()
+                if col_g2.button("Mantener cupo libre", key=f"ges_keep_{row['id_cita']}"):
+                    st.session_state["cupo_liberado"] = None
+                    st.rerun()
+
+        if bc.button("Registrar ausencia", key=f"ges_aus_{row['id_cita']}"):
+            st.session_state.citas.loc[st.session_state.citas["id_cita"]==row["id_cita"],"estado"]="Ausente"
+            st.error(f"Ausencia GES registrada.")
+            st.rerun()
+        st.markdown("<hr>", unsafe_allow_html=True)
 
         # Grafico por patologia
         st.divider()
